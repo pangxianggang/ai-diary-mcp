@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Diary · Memory</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%93%94%3C/text%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">◆</span>
+          <div>
+            <div class="brand-name">AI Diary</div>
+            <div class="brand-sub">memory for AI</div>
+          </div>
+        </div>
+
+        <nav class="nav" id="nav">
+          <button class="nav-item active" data-view="all"><span>✦</span> All memories</button>
+          <button class="nav-item" data-view="timeline"><span>◷</span> Timeline</button>
+          <button class="nav-item" data-view="tags"><span>#</span> Tags</button>
+          <button class="nav-item" data-view="collections"><span>▤</span> Collections</button>
+          <button class="nav-item" data-view="duplicates"><span>⎘</span> Duplicates</button>
+        </nav>
+
+        <div class="stats-card" id="statsCard"></div>
+
+        <div class="sidebar-footer">
+          <button class="btn-ghost" id="snapshotBtn" title="Commit DB to git">⎙ Snapshot</button>
+          <button class="btn-ghost" id="themeBtn" title="Toggle theme">☾</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="search">
+            <span class="search-ico">⌕</span>
+            <input id="search" type="search" placeholder="Search memories (中文 OK)…" autocomplete="off" />
+          </div>
+          <button class="btn-primary" id="newBtn">＋ New memory</button>
+        </header>
+
+        <div class="view-title" id="viewTitle">All memories</div>
+        <section class="content" id="content"></section>
+      </main>
+    </div>
+
+    <!-- New memory modal -->
+    <div class="modal-backdrop" id="modal" hidden>
+      <div class="modal">
+        <div class="modal-head">
+          <h3>New memory</h3>
+          <button class="icon-btn" id="closeModal">✕</button>
+        </div>
+        <textarea id="mContent" rows="5" placeholder="What should the AI remember?"></textarea>
+        <div class="modal-row">
+          <input id="mTags" placeholder="tags (comma separated)" />
+          <input id="mCategory" placeholder="category" />
+        </div>
+        <div class="modal-row">
+          <label class="imp">Importance
+            <select id="mImportance">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3" selected>3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+            </select>
+          </label>
+          <button class="btn-primary" id="saveBtn">Save memory</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+    <script src="/app.js"></script>
+  </body>
+</html>
