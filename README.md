@@ -1,49 +1,103 @@
-# ai-diary-mcp
+<div align="center">
 
-A **local-first MCP server** that gives any AI a private long-term memory — its own diary / journal.
+<img src="docs/banner.png" alt="AI Diary — local-first memory for AI" width="100%" />
 
-- **Zero models, zero network, zero subscription.** All data lives in a single SQLite file on your machine.
-- **No embeddings needed.** Retrieval uses SQLite **FTS5 full-text search with BM25 ranking** and a **trigram tokenizer**, so search works great for English *and* Chinese / other CJK text. The "thinking" (summaries, tagging, reflection) is delegated to the model your editor/platform already runs.
-- **Works on every MCP host:** Claude Desktop, Cursor, Windsurf, Cline, VS Code, Zed, and anything else that speaks MCP over stdio.
-- **Smart when it can be:** when the host supports MCP *sampling*, `recall` can expand queries + re-rank, and `reflect` can auto-summarize — all with graceful fallback when it can't.
-- **A beautiful local dashboard** to browse, search, and add memories in your browser.
+<p>
+  <b>A private, local-first MCP server that gives any AI long-term memory — its own diary.</b><br/>
+  Zero models · zero network · zero subscription. Smarter search than Notion, running entirely on your machine.
+</p>
 
-## Design philosophy
+<p>
+  <img src="https://img.shields.io/badge/TypeScript-5.8-3178c6?logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Node-%E2%89%A520-339933?logo=node.js&logoColor=white" alt="Node" />
+  <img src="https://img.shields.io/badge/MCP-stdio-7c5cff" alt="MCP" />
+  <img src="https://img.shields.io/badge/SQLite-FTS5%20trigram-003b57?logo=sqlite&logoColor=white" alt="SQLite FTS5" />
+  <img src="https://img.shields.io/badge/local--first-100%25%20offline-36d399" alt="Local-first" />
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT" />
+</p>
+
+<p>
+  <a href="#-quick-start">Quick start</a> ·
+  <a href="#-the-dashboard">Dashboard</a> ·
+  <a href="#-connect-it-to-your-ai">Connect</a> ·
+  <a href="#-tools">Tools</a> ·
+  <a href="#-why-its-better-than-notion">Why</a>
+</p>
+
+</div>
+
+---
+
+## ✨ Highlights
+
+- 🔒 **Truly private.** Every memory lives in one SQLite file on your disk. Nothing is ever uploaded.
+- 🧠 **No embeddings, still smart.** Retrieval uses SQLite **FTS5 + BM25** with a **trigram tokenizer**, so search is instant and works great for **English *and* 中文 / CJK**.
+- 🤝 **Borrows your platform's brain.** When the host supports MCP *sampling*, `recall` expands & re-ranks and `reflect` auto-summarizes — with graceful fallback when it doesn't. The server itself never ships a model.
+- 🕸️ **A real knowledge graph.** Link memories and traverse the web of context.
+- 🗂️ **Collections, tags, importance, reflection, dedup.** Organize like Notion — locally and programmatically.
+- 🎨 **A beautiful local dashboard.** Browse, search, and add memories in your browser (dark & light).
+- 🧩 **Works everywhere MCP does.** Claude Desktop, Cursor, Windsurf, Cline, VS Code, Zed…
+
+## 🖥️ The dashboard
+
+A polished local web UI over the same database — `npm run dashboard`, then open `http://localhost:4178`.
+
+<div align="center">
+  <img src="docs/dashboard-home.png" alt="AI Diary dashboard — all memories" width="80%" />
+  <br/><br/>
+  <table>
+    <tr>
+      <td width="50%"><img src="docs/dashboard-tags.png" alt="Tag view" width="100%" /></td>
+      <td width="50%"><img src="docs/dashboard-new.png" alt="New memory" width="100%" /></td>
+    </tr>
+    <tr>
+      <td align="center"><sub>Tags, including 中文</sub></td>
+      <td align="center"><sub>Add a memory in a click</sub></td>
+    </tr>
+  </table>
+</div>
+
+Browse · full-text search (English + 中文) · filter by tag/collection · spot near-duplicates · add memories · dark/light theme · one-click git snapshot.
+
+## 🏆 Why it's better than Notion
+
+| | **AI Diary** | Notion |
+| --- | --- | --- |
+| Privacy | 100% local, single file you own | Cloud-hosted |
+| Built for AI | Native MCP tools an agent calls directly | Manual / limited API |
+| Chinese search | FTS5 trigram — precise CJK substring search | Weak |
+| Knowledge graph | First-class links + graph traversal | No |
+| Offline | Always | No |
+| Cost | Free, no subscription | Paid tiers |
+| Versioning | Optional git history of your memory | Limited |
+
+## 🚀 Quick start
+
+```bash
+git clone https://github.com/pangxianggang/ai-diary-mcp.git
+cd ai-diary-mcp
+npm install
+npm run build      # produces dist/index.js — the stdio MCP server
+npm run smoke      # self-test (26 assertions)
+```
+
+Try the dashboard with some sample data:
+
+```bash
+AI_DIARY_DB_PATH=./demo.db node scripts/seed-demo.mjs
+AI_DIARY_DB_PATH=./demo.db npm run dashboard      # http://localhost:4178
+```
+
+> Override the port with `AI_DIARY_PORT`.
+
+## 🎨 The design philosophy
 
 > The server is the **hippocampus** — fast storage, structure, and retrieval.
 > Your platform's model is the **cortex** — it reasons, summarizes, and decides what to remember.
 
 The server never calls an LLM and never goes online. That keeps it private, free, and trivially portable.
 
-## Quick start
-
-```bash
-git clone https://github.com/pangxianggang/ai-diary-mcp.git
-cd ai-diary-mcp
-npm install
-npm run build
-```
-
-That produces `dist/index.js`, a stdio MCP server you can point any client at.
-
-Run the self-test:
-
-```bash
-npm run smoke
-```
-
-Launch the local dashboard (a beautiful web UI over the same database):
-
-```bash
-npm run dashboard       # http://localhost:4178  (override port with AI_DIARY_PORT)
-# optional: seed some demo memories first
-AI_DIARY_DB_PATH=./demo.db node scripts/seed-demo.mjs
-AI_DIARY_DB_PATH=./demo.db npm run dashboard
-```
-
-The dashboard lets you browse, full-text search (English + 中文), filter by tag/collection, spot near-duplicates, add memories, and commit a git snapshot — a private, local alternative to Notion.
-
-## Where memories are stored
+## 💾 Where memories are stored
 
 A single SQLite file:
 
@@ -53,15 +107,15 @@ A single SQLite file:
 | macOS   | `~/Library/Application Support/ai-diary/memory.db`   |
 | Linux   | `$XDG_DATA_HOME/ai-diary/memory.db` (or `~/.local/share/...`) |
 
-Override with the `AI_DIARY_DB_PATH` environment variable. Back up by copying the file. You can even keep it in a git repo for versioned memory history.
+Override with `AI_DIARY_DB_PATH`. Back up by copying the file. Keep it inside a git repo and call `snapshot` for versioned memory history.
 
-## Connecting it to a client
+## 🔌 Connect it to your AI
 
 Use the absolute path to the built `dist/index.js`.
 
 ### Claude Desktop
 
-Edit `claude_desktop_config.json` (Settings → Developer → Edit Config):
+`claude_desktop_config.json` (Settings → Developer → Edit Config):
 
 ```json
 {
@@ -74,24 +128,9 @@ Edit `claude_desktop_config.json` (Settings → Developer → Edit Config):
 }
 ```
 
-### Cursor
+### Cursor / Windsurf / Cline / Zed / VS Code
 
-`~/.cursor/mcp.json` (or Settings → MCP):
-
-```json
-{
-  "mcpServers": {
-    "ai-diary": {
-      "command": "node",
-      "args": ["/absolute/path/to/ai-diary-mcp/dist/index.js"]
-    }
-  }
-}
-```
-
-### Windsurf / Cline / Zed / VS Code
-
-All use the same shape — a server entry with `command: "node"` and `args` pointing at `dist/index.js`. Add an `env` block to relocate the database:
+All use the same shape — `command: "node"` with `args` pointing at `dist/index.js`. Add an `env` block to relocate the database:
 
 ```json
 {
@@ -107,59 +146,53 @@ All use the same shape — a server entry with `command: "node"` and `args` poin
 
 Restart the client after editing its config.
 
-## Tools
+## 🧰 Tools
 
 | Tool         | What it does |
 | ------------ | ------------ |
 | `remember`   | Save a memory (`content`, optional `tags`, `category`, `importance` 1–5, `occurred_at`). Identical content is de-duplicated. |
-| `recall`     | Search by text (FTS5 BM25, CJK-aware) with optional `tags` / `category` / time filters. |
+| `recall`     | Search by text (FTS5 BM25, CJK-aware) with optional `tags` / `category` / `collection_id` / time filters. `smart=true` adds host-model query expansion + re-ranking (with fallback). |
 | `recent`     | List the most recently created memories. |
 | `timeline`   | Browse chronologically by when things occurred. |
 | `get`        | Fetch one memory by id, including its links. |
 | `update`     | Edit an existing memory. |
 | `forget`     | Archive (default) or hard-delete a memory. |
 | `link`       | Connect two memories into a knowledge graph (e.g. `caused`, `related`). |
+| `graph`      | Traverse the knowledge graph around a memory (BFS to a depth) and return connected memories + links. |
+| `find_duplicates` | Surface near-duplicate memories via trigram similarity. |
+| `create_collection` / `add_to_collection` / `list_collections` | Group memories into Notion-like collections. |
 | `list_tags`  | All tags with usage counts. |
 | `stats`      | Totals, categories, time range, db location. |
 | `export`     | Export memories as Markdown. |
-| `reflect`    | Consolidate related memories. With `auto=true` (and host sampling) it summarizes them and stores the reflection automatically; otherwise it returns them for the host model to summarize. |
-| `graph`      | Traverse the knowledge graph around a memory (BFS to a given depth) and return connected memories + links. |
-| `find_duplicates` | Surface near-duplicate memories via trigram similarity so they can be merged or forgotten. |
-| `create_collection` | Create (or fetch) a named collection — like a Notion database — for grouping memories. |
-| `add_to_collection` | Add a memory to a collection. |
-| `list_collections`  | List collections with how many memories each holds. |
-| `snapshot`   | Commit the SQLite file to git for versioned memory history (when the DB lives in a git repo). |
+| `reflect`    | Consolidate related memories. `auto=true` (with host sampling) summarizes and stores the reflection, linked to its sources. |
+| `snapshot`   | Commit the SQLite file to git for versioned memory history. |
 
-`recall` also accepts `collection_id` and `smart` (host-model query expansion + re-ranking, with fallback).
+**Resource** `memory://recent` (recent entries as Markdown) · **Prompt** `recall-about` (recall + summarize a topic).
 
-### Resources & prompts
-
-- Resource `memory://recent` — the 20 most recent entries as Markdown, attachable as context.
-- Prompt `recall-about` — a template that recalls and summarizes everything about a topic.
-
-## Capabilities by phase
+## 🧱 Capabilities by phase
 
 1. **MVP** — SQLite + FTS5 (CJK trigram) + full CRUD over stdio, one-line client config.
-2. **Smart retrieval** — optional MCP-sampling query expansion + re-ranking in `recall`, with automatic fallback to plain FTS5.
+2. **Smart retrieval** — optional MCP-sampling query expansion + re-ranking in `recall`, automatic fallback to plain FTS5.
 3. **Structure** — tags, **collections**, links / **knowledge graph** traversal, importance, soft-forget.
 4. **Reflection** — `reflect auto=true` consolidates memories via the host model; `find_duplicates` for de-duplication.
 5. **Experience** — a polished local **web dashboard** + Markdown export + optional **git-versioned** history.
 
-## How search works (without embeddings)
+## 🔍 How search works (without embeddings)
 
 1. **FTS5 + BM25** ranks entries by relevance. The **trigram** tokenizer indexes 3-character sequences, which is what makes substring and CJK search work.
-2. **Metadata filters** (tags, category, time range, importance) narrow results.
+2. **Metadata filters** (tags, category, collection, time range, importance) narrow results.
 3. Queries shorter than 3 characters fall back to a `LIKE` substring scan.
-4. Optional: a host that supports MCP *sampling* can expand queries or re-rank results — but the core works fully without it.
+4. With `smart=true`, a sampling-capable host expands the query and re-ranks candidates — but the core works fully without it.
 
-## Development
+## 🛠️ Development
 
 ```bash
 npm run dev        # tsc --watch
 npm run typecheck  # type-check only
-npm run smoke      # in-memory end-to-end check
+npm run smoke      # in-memory end-to-end check (26 assertions)
+npm run dashboard  # local web UI
 ```
 
-## License
+## 📄 License
 
 MIT
