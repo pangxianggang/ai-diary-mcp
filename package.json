@@ -1,0 +1,42 @@
+{
+  "name": "ai-diary-mcp",
+  "version": "0.1.0",
+  "description": "Local-first MCP server that gives AI a private long-term memory / diary. Zero models, zero network, zero subscription.",
+  "type": "module",
+  "bin": {
+    "ai-diary-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node dist/smoke.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "memory",
+    "diary",
+    "ai",
+    "sqlite"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "better-sqlite3": "11.10.0",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "20.19.0",
+    "typescript": "5.8.3"
+  }
+}
