@@ -137,6 +137,7 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === "POST" && pathname === "/api/snapshot") {
       const body = (await readBody(req)) as { message?: string };
+      store.checkpoint();
       return sendJson(res, 200, gitSnapshot(store.path, body.message));
     }
 

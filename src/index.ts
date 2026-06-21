@@ -487,6 +487,7 @@ server.registerTool(
     },
   },
   async (args) => {
+    store.checkpoint();
     const result = gitSnapshot(store.path, args.message);
     return text(result.message);
   },

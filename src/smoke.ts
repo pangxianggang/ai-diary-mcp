@@ -93,6 +93,10 @@ try {
   const dups = store.findDuplicates(0.6);
   assert(dups.length >= 1 && dups[0].score >= 0.6, "find near-duplicate pair");
 
+  // Phase 5: WAL checkpoint (used before git snapshot) flushes without error
+  store.checkpoint();
+  assert(store.get(a.id)?.id === a.id, "data intact after checkpoint");
+
   process.stdout.write("\nALL SMOKE TESTS PASSED\n");
 } finally {
   store.close();

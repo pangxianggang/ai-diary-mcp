@@ -171,6 +171,11 @@ export class MemoryStore {
     this.db.close();
   }
 
+  /** Flushes the WAL into the main db file so it is a complete, self-contained backup. */
+  checkpoint(): void {
+    this.db.pragma("wal_checkpoint(TRUNCATE)");
+  }
+
   private tagsFor(entryId: number): string[] {
     const rows = this.db
       .prepare("SELECT tag FROM entry_tags WHERE entry_id = ? ORDER BY tag")
