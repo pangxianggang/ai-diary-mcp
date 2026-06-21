@@ -52,7 +52,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 22px;
+  overflow: hidden;
 }
+.brand, .stats-card, .sidebar-footer { flex-shrink: 0; }
 
 .brand { display: flex; align-items: center; gap: 12px; }
 .brand-mark {
@@ -65,7 +67,7 @@ body {
 .brand-name { font-weight: 700; font-size: 16px; letter-spacing: 0.2px; }
 .brand-sub { font-size: 12px; color: var(--text-faint); }
 
-.nav { display: flex; flex-direction: column; gap: 4px; }
+.nav { display: flex; flex-direction: column; gap: 4px; flex: 1 1 auto; overflow-y: auto; min-height: 0; }
 .nav-item {
   display: flex; align-items: center; gap: 11px;
   width: 100%; padding: 10px 12px;
@@ -81,7 +83,6 @@ body {
 }
 
 .stats-card {
-  margin-top: auto;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
