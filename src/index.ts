@@ -3,6 +3,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { EntryWithTags, MemoryStore } from "./db.js";
+import { expandQuery, rerank, trySample } from "./sampling.js";
+import { gitSnapshot } from "./history.js";
 
 const store = new MemoryStore();
 
@@ -80,28 +82,64 @@ server.registerTool(
   "recall",
   {
     description:
-      "Search memories by text (full-text BM25 ranking, works with Chinese and other CJK text) plus optional tag/category/time filters. Use before answering to retrieve relevant context.",
+      "Search memories by text (full-text BM25 ranking, works with Chinese and other CJK text) plus optional tag/category/collection/time filters. Use before answering to retrieve relevant context. Set smart=true to let the host model expand the query and re-rank results (falls back to plain search if the host has no sampling support).",
     inputSchema: {
       query: z.string().optional().describe("Search text. Omit to browse by filters."),
       tags: z.array(z.string()).optional().describe("Only entries with any of these tags."),
       category: z.string().optional().describe("Only this category."),
+      collection_id: z.number().int().optional().describe("Only entries in this collection."),
       from: z.string().optional().describe("Earliest occurred_at (ISO 8601 or epoch ms)."),
       to: z.string().optional().describe("Latest occurred_at (ISO 8601 or epoch ms)."),
       include_archived: z.boolean().optional().describe("Include archived entries."),
+      smart: z.boolean().optional().describe("Use host-model query expansion + re-ranking when available."),
       limit: z.number().int().min(1).max(200).optional().describe("Max results (default 20)."),
     },
   },
   async (args) => {
-    const results = store.search({
-      query: args.query,
+    const limit = args.limit ?? 20;
+    const baseOpts = {
       tags: args.tags,
       category: args.category,
+      collectionId: args.collection_id,
       from: parseTime(args.from),
       to: parseTime(args.to),
       includeArchived: args.include_archived,
-      limit: args.limit,
+    };
+
+    let results = store.search({
+      ...baseOpts,
+      query: args.query,
+      limit: args.smart ? Math.max(limit, 30) : limit,
     });
-    return text(formatList(results, "No matching memories."));
+
+    if (args.smart && args.query) {
+      const byId = new Map<number, EntryWithTags>();
+      for (const e of results) byId.set(e.id, e);
+      for (const term of await expandQuery(server, args.query)) {
+        for (const e of store.search({ ...baseOpts, query: term, limit: 10 })) {
+          byId.set(e.id, e);
+        }
+      }
+      const merged = [...byId.values()];
+      const order = await rerank(
+        server,
+        args.query,
+        merged.map((e) => ({ id: e.id, content: e.content })),
+      );
+      if (order) {
+        const rank = new Map(order.map((id, i) => [id, i]));
+        merged.sort(
+          (a, b) =>
+            (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+            (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+        );
+        results = merged.filter((e) => rank.has(e.id));
+      } else {
+        results = merged;
+      }
+    }
+
+    return text(formatList(results.slice(0, limit), "No matching memories."));
   },
 );
 
@@ -293,9 +331,10 @@ server.registerTool(
   "reflect",
   {
     description:
-      "Gather related memories for consolidation. Returns the raw entries plus guidance; YOU (the calling model) should synthesize a concise summary and persist it with `remember` using category 'reflection'. The server stores no model of its own.",
+      "Consolidate related memories. With auto=true the host model summarizes them and the summary is stored automatically (category 'reflection', linked to its sources). Without sampling support, or auto=false, it returns the raw entries plus guidance for YOU to summarize and persist via `remember`. The server stores no model of its own.",
     inputSchema: {
       topic: z.string().optional().describe("Topic to reflect on. Omit to reflect on recent memories."),
+      auto: z.boolean().optional().describe("Auto-summarize via the host model and persist the reflection."),
       limit: z.number().int().min(1).max(100).optional().describe("How many entries to pull (default 30)."),
     },
   },
@@ -304,11 +343,152 @@ server.registerTool(
     const entries = args.topic
       ? store.search({ query: args.topic, limit })
       : store.recent(limit);
+
+    if (entries.length === 0) return text("No memories to reflect on.");
+
+    if (args.auto) {
+      const summary = await trySample(
+        server,
+        `Summarize the following memories into a concise reflection (3-6 sentences) capturing key facts, decisions, and patterns. Keep the original language.\n\n${entries
+          .map((e) => `#${e.id}: ${e.content}`)
+          .join("\n")}`,
+        {
+          systemPrompt:
+            "You consolidate a personal/AI memory journal into concise reflections.",
+          maxTokens: 600,
+        },
+      );
+      if (summary) {
+        const reflection = store.remember({
+          content: summary.trim(),
+          category: "reflection",
+          tags: args.topic ? ["reflection", args.topic] : ["reflection"],
+          importance: 4,
+        });
+        for (const e of entries) store.link(reflection.id, e.id, "summarizes");
+        return text(
+          `Stored reflection #${reflection.id} (linked to ${entries.length} memories).\n\n${formatEntry(reflection)}`,
+        );
+      }
+      // Sampling unavailable — fall through to guidance mode.
+    }
+
     const guidance =
       "Synthesize the memories below into a concise summary capturing key facts, decisions, and patterns. " +
       "Then call `remember` with category 'reflection' (and relevant tags) to persist it. " +
       "Optionally `link` the new reflection to the source memories.";
     return text(`${guidance}\n\n---\n\n${formatList(entries, "No memories to reflect on.")}`);
+  },
+);
+
+server.registerTool(
+  "graph",
+  {
+    description: "Traverse the knowledge graph around a memory and return connected memories and their links.",
+    inputSchema: {
+      id: z.number().int().describe("Starting entry id."),
+      depth: z.number().int().min(1).max(4).optional().describe("Traversal depth (default 1)."),
+    },
+  },
+  async (args) => {
+    const g = store.graph(args.id, args.depth ?? 1);
+    if (!g) return text(`No memory with id #${args.id}.`);
+    const nodes = g.nodes.map((n) => `#${n.id}: ${n.content.slice(0, 80)}`).join("\n");
+    const edges = g.edges
+      .map((e) => `#${e.from_id} -> #${e.to_id} (${e.relation})`)
+      .join("\n");
+    return text(
+      `nodes (${g.nodes.length}):\n${nodes}\n\nedges (${g.edges.length}):\n${edges || "  (none)"}`,
+    );
+  },
+);
+
+server.registerTool(
+  "find_duplicates",
+  {
+    description: "Find near-duplicate memories (trigram similarity) so they can be merged or forgotten.",
+    inputSchema: {
+      threshold: z.number().min(0.1).max(1).optional().describe("Similarity 0-1 (default 0.6)."),
+      limit: z.number().int().min(1).max(200).optional().describe("Max pairs (default 50)."),
+    },
+  },
+  async (args) => {
+    const pairs = store.findDuplicates(args.threshold ?? 0.6, args.limit ?? 50);
+    if (pairs.length === 0) return text("No near-duplicate memories found.");
+    return text(
+      pairs
+        .map(
+          (p) =>
+            `${(p.score * 100).toFixed(0)}%  #${p.a.id} ⇄ #${p.b.id}\n  #${p.a.id}: ${p.a.content.slice(0, 80)}\n  #${p.b.id}: ${p.b.content.slice(0, 80)}`,
+        )
+        .join("\n\n"),
+    );
+  },
+);
+
+server.registerTool(
+  "create_collection",
+  {
+    description: "Create (or fetch) a named collection for grouping memories, like a Notion database.",
+    inputSchema: {
+      name: z.string().min(1),
+      description: z.string().optional(),
+    },
+  },
+  async (args) => {
+    const c = store.createCollection(args.name, args.description);
+    return text(`Collection #${c.id} "${c.name}".`);
+  },
+);
+
+server.registerTool(
+  "add_to_collection",
+  {
+    description: "Add a memory to a collection.",
+    inputSchema: {
+      collection_id: z.number().int(),
+      entry_id: z.number().int(),
+    },
+  },
+  async (args) => {
+    const ok = store.addToCollection(args.collection_id, args.entry_id);
+    return text(
+      ok
+        ? `Added #${args.entry_id} to collection #${args.collection_id}.`
+        : "Collection or memory does not exist.",
+    );
+  },
+);
+
+server.registerTool(
+  "list_collections",
+  {
+    description: "List all collections with how many memories each contains.",
+    inputSchema: {},
+  },
+  async () => {
+    const cols = store.listCollections();
+    if (cols.length === 0) return text("No collections yet.");
+    return text(
+      cols
+        .map((c) => `#${c.id} ${c.name} (${c.count})${c.description ? ` — ${c.description}` : ""}`)
+        .join("\n"),
+    );
+  },
+);
+
+server.registerTool(
+  "snapshot",
+  {
+    description:
+      "Commit the memory database to git for versioned history. Requires the database's directory to be a git repo (set AI_DIARY_DB_PATH inside one).",
+    inputSchema: {
+      message: z.string().optional().describe("Optional commit message."),
+    },
+  },
+  async (args) => {
+    const result = gitSnapshot(store.path, args.message);
+    return text(result.message);
   },
 );
 

@@ -27,10 +27,33 @@ export interface Link {
   created_at: number;
 }
 
+export interface Collection {
+  id: number;
+  name: string;
+  description: string | null;
+  created_at: number;
+}
+
+export interface CollectionWithCount extends Collection {
+  count: number;
+}
+
+export interface GraphResult {
+  nodes: EntryWithTags[];
+  edges: Link[];
+}
+
+export interface DuplicatePair {
+  a: EntryWithTags;
+  b: EntryWithTags;
+  score: number;
+}
+
 export interface SearchOptions {
   query?: string;
   tags?: string[];
   category?: string;
+  collectionId?: number;
   from?: number;
   to?: number;
   includeArchived?: boolean;
@@ -94,6 +117,21 @@ CREATE TABLE IF NOT EXISTS links (
   created_at INTEGER NOT NULL,
   PRIMARY KEY (from_id, to_id, relation)
 );
+
+CREATE TABLE IF NOT EXISTS collections (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS collection_entries (
+  collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+  entry_id INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+  added_at INTEGER NOT NULL,
+  PRIMARY KEY (collection_id, entry_id)
+);
+CREATE INDEX IF NOT EXISTS idx_collection_entries_entry ON collection_entries(entry_id);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
   content,
@@ -315,6 +353,12 @@ export class MemoryStore {
       );
       args.push(...opts.tags);
     }
+    if (opts.collectionId !== undefined) {
+      where.push(
+        "e.id IN (SELECT entry_id FROM collection_entries WHERE collection_id = ?)",
+      );
+      args.push(opts.collectionId);
+    }
 
     let sql: string;
     let bind: unknown[];
@@ -371,6 +415,120 @@ export class MemoryStore {
       .prepare("SELECT * FROM links WHERE to_id = ?")
       .all(id) as Link[];
     return { outgoing, incoming };
+  }
+
+  /** Breadth-first traversal of the link graph around an entry. */
+  graph(id: number, depth = 1): GraphResult | null {
+    const root = this.get(id);
+    if (!root) return null;
+    const visited = new Set<number>([id]);
+    const edges: Link[] = [];
+    let frontier = [id];
+    for (let d = 0; d < Math.max(0, depth); d++) {
+      const next: number[] = [];
+      for (const node of frontier) {
+        const { outgoing, incoming } = this.linksFor(node);
+        for (const l of [...outgoing, ...incoming]) {
+          edges.push(l);
+          for (const neighbor of [l.from_id, l.to_id]) {
+            if (!visited.has(neighbor)) {
+              visited.add(neighbor);
+              next.push(neighbor);
+            }
+          }
+        }
+      }
+      frontier = next;
+      if (frontier.length === 0) break;
+    }
+    const nodes: EntryWithTags[] = [];
+    for (const nodeId of visited) {
+      const e = this.get(nodeId);
+      if (e) nodes.push(e);
+    }
+    const seen = new Set<string>();
+    const uniqueEdges = edges.filter((l) => {
+      const key = `${l.from_id}->${l.to_id}:${l.relation}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return { nodes, edges: uniqueEdges };
+  }
+
+  createCollection(name: string, description?: string): Collection {
+    const now = Date.now();
+    this.db
+      .prepare(
+        "INSERT OR IGNORE INTO collections(name, description, created_at) VALUES (?, ?, ?)",
+      )
+      .run(name, description ?? null, now);
+    return this.db
+      .prepare("SELECT * FROM collections WHERE name = ?")
+      .get(name) as Collection;
+  }
+
+  listCollections(): CollectionWithCount[] {
+    return this.db
+      .prepare(
+        `SELECT c.*, COUNT(ce.entry_id) AS count
+         FROM collections c
+         LEFT JOIN collection_entries ce ON ce.collection_id = c.id
+         GROUP BY c.id ORDER BY c.name ASC`,
+      )
+      .all() as CollectionWithCount[];
+  }
+
+  addToCollection(collectionId: number, entryId: number): boolean {
+    const c = this.db
+      .prepare("SELECT id FROM collections WHERE id = ?")
+      .get(collectionId);
+    const e = this.db.prepare("SELECT id FROM entries WHERE id = ?").get(entryId);
+    if (!c || !e) return false;
+    this.db
+      .prepare(
+        "INSERT OR IGNORE INTO collection_entries(collection_id, entry_id, added_at) VALUES (?, ?, ?)",
+      )
+      .run(collectionId, entryId, Date.now());
+    return true;
+  }
+
+  removeFromCollection(collectionId: number, entryId: number): boolean {
+    const info = this.db
+      .prepare(
+        "DELETE FROM collection_entries WHERE collection_id = ? AND entry_id = ?",
+      )
+      .run(collectionId, entryId);
+    return info.changes > 0;
+  }
+
+  collectionEntries(collectionId: number, limit = 200): EntryWithTags[] {
+    const rows = this.db
+      .prepare(
+        `SELECT e.* FROM collection_entries ce
+         JOIN entries e ON e.id = ce.entry_id
+         WHERE ce.collection_id = ? AND e.archived = 0
+         ORDER BY ce.added_at DESC LIMIT ?`,
+      )
+      .all(collectionId, limit) as Entry[];
+    return rows.map((e) => this.withTags(e));
+  }
+
+  /** Finds near-duplicate active entries via trigram Jaccard similarity. */
+  findDuplicates(threshold = 0.6, limit = 50): DuplicatePair[] {
+    const entries = this.recent(2000);
+    const grams = entries.map((e) => trigramSet(e.content));
+    const pairs: DuplicatePair[] = [];
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        const score = jaccard(grams[i], grams[j]);
+        if (score >= threshold) {
+          pairs.push({ a: entries[i], b: entries[j], score });
+        }
+      }
+    }
+    pairs.sort((x, y) => y.score - x.score);
+    return pairs.slice(0, limit);
   }
 
   listTags(): { tag: string; count: number }[] {
@@ -450,6 +608,22 @@ export class MemoryStore {
     }
     return lines.join("\n");
   }
+}
+
+function trigramSet(text: string): Set<string> {
+  const s = text.toLowerCase().replace(/\s+/g, " ").trim();
+  const set = new Set<string>();
+  for (let i = 0; i + 3 <= s.length; i++) set.add(s.slice(i, i + 3));
+  return set;
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 && b.size === 0) return 0;
+  let inter = 0;
+  const [small, large] = a.size <= b.size ? [a, b] : [b, a];
+  for (const g of small) if (large.has(g)) inter++;
+  const union = a.size + b.size - inter;
+  return union === 0 ? 0 : inter / union;
 }
 
 function clampImportance(value: number | undefined): number {

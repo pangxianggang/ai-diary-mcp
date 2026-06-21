@@ -66,6 +66,33 @@ try {
   const md = store.exportMarkdown({});
   assert(md.includes("# AI Diary Export"), "markdown export header");
 
+  // Phase 3: collections
+  const col = store.createCollection("project", "MCP work");
+  assert(col.id > 0, "create collection");
+  assert(store.addToCollection(col.id, a.id), "add to collection");
+  const colList = store.listCollections();
+  assert(colList.some((c) => c.id === col.id && c.count === 1), "list collections with count");
+  assert(store.search({ collectionId: col.id }).some((e) => e.id === a.id), "search by collection filter");
+  assert(store.collectionEntries(col.id).length === 1, "collection entries");
+  assert(store.removeFromCollection(col.id, a.id), "remove from collection");
+
+  // Phase 3: knowledge graph
+  const c1 = store.remember({ content: "Graph node alpha about MCP transport." });
+  const c2 = store.remember({ content: "Graph node beta about SQLite storage." });
+  const c3 = store.remember({ content: "Graph node gamma about FTS5 ranking." });
+  store.link(c1.id, c2.id, "related");
+  store.link(c2.id, c3.id, "related");
+  const g1 = store.graph(c1.id, 1);
+  assert(g1 !== null && g1.nodes.some((n) => n.id === c2.id), "graph depth 1 reaches neighbor");
+  const g2 = store.graph(c1.id, 2);
+  assert(g2 !== null && g2.nodes.some((n) => n.id === c3.id), "graph depth 2 reaches 2-hop node");
+
+  // Phase 4: duplicate detection
+  store.remember({ content: "The quick brown fox jumps over the lazy dog near the river." });
+  store.remember({ content: "The quick brown fox jumps over the lazy dog beside the river." });
+  const dups = store.findDuplicates(0.6);
+  assert(dups.length >= 1 && dups[0].score >= 0.6, "find near-duplicate pair");
+
   process.stdout.write("\nALL SMOKE TESTS PASSED\n");
 } finally {
   store.close();
